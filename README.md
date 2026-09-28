@@ -98,7 +98,9 @@ post. Explain one tradeoff and one failure you diagnosed in your own words.
 ## Scope and next steps
 
 This starter has HTTP tests and syntax checks, not a full lint or coverage gate.
-Trivy checks the container OS packages as well as source secrets. Scanner feeds
+The container uses Python on Alpine to reduce unnecessary OS packages. The
+initial Debian-based build was blocked by 44 HIGH findings; the scan threshold
+remains unchanged. Trivy checks OS packages as well as source secrets. Scanner feeds
 can introduce new failures: update affected dependencies rather than disable the
 gate. The Python base tag receives updates and is not digest-pinned, so rebuilding
 an old commit can change the base; promotion still uses an immutable image digest.
