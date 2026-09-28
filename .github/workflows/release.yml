@@ -22,7 +22,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -m unittest discover -s tests -v
-      - uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           scan-type: fs
           scanners: vuln,secret
@@ -32,13 +32,13 @@ jobs:
         run: |
           docker build --build-arg REVISION="$GITHUB_SHA" -t demo:release .
           bash scripts/smoke.sh demo:release
-      - uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: demo:release
           severity: HIGH,CRITICAL
           exit-code: '1'
       - name: Generate SBOM
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           image-ref: demo:release
           format: spdx-json
