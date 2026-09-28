@@ -1,0 +1,80 @@
+name: Release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: delivery
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      image: ${{ steps.publish.outputs.image }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests -v
+      - uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+      - name: Build once and test
+        run: |
+          docker build --build-arg REVISION="$GITHUB_SHA" -t demo:release .
+          bash scripts/smoke.sh demo:release
+      - uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: demo:release
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: demo:release
+          format: spdx-json
+          output: sbom.json
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+      - name: Publish, sign and attest image
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          tag="$repository:$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag demo:release "$tag"
+          docker push "$tag"
+          image=$(docker inspect --format='{{index .RepoDigests 0}}' "$tag")
+          cosign sign --yes "$image"
+          cosign attest --yes --type spdxjson --predicate sbom.json "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Published and signed: \`$image\`" >> "$GITHUB_STEP_SUMMARY"
+  staging:
+    needs: build
+    uses: ./.github/workflows/deploy.yml
+    with:
+      image: ${{ needs.build.outputs.image }}
+      target: staging
+    permissions:
+      contents: read
+      packages: read
+  production:
+    needs: [build, staging]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      image: ${{ needs.build.outputs.image }}
+      target: production
+    permissions:
+      contents: read
+      packages: read

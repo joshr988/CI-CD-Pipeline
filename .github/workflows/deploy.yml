@@ -1,0 +1,40 @@
+name: Verify and rehearse deployment
+on:
+  workflow_call:
+    inputs:
+      image:
+        type: string
+        required: true
+      target:
+        type: string
+        required: true
+permissions:
+  contents: read
+  packages: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+      - name: Verify identity and run temporary deployment
+        env:
+          IMAGE: ${{ inputs.image }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          prefix="ghcr.io/${GITHUB_REPOSITORY,,}@sha256:"
+          [[ "$IMAGE" == "$prefix"* ]]
+          digest="${IMAGE#"$prefix"}"
+          [[ "$digest" =~ ^[a-f0-9]{64}$ ]]
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/heads/main"
+          cosign verify --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE"
+          cosign verify-attestation --type spdxjson --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE"
+          bash scripts/smoke.sh "$IMAGE"
+          echo "$TARGET rehearsal passed for \`$IMAGE\`. Temporary container removed." >> "$GITHUB_STEP_SUMMARY"
